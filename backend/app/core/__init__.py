@@ -1,0 +1,1 @@
+"""Backend core utilities (config, security, response helpers)."""
