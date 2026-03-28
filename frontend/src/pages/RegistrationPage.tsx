@@ -2,7 +2,9 @@ import { useState, type FormEvent } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 
 import { CommonButton } from '../components/ui/CommonButton'
+import { AuthShell } from '../components/ui/AuthShell'
 import { FormInput } from '../components/ui/FormInput'
+import { useToast } from '../components/ui/ToastProvider'
 import { useAuth } from '../contexts/AuthContext'
 
 function validateEmail(email: string) {
@@ -20,13 +22,13 @@ function validatePassword(password: string) {
 export function RegistrationPage() {
   const navigate = useNavigate()
   const { register, loading, authError } = useAuth()
+  const { pushToast } = useToast()
 
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
   const [phone, setPhone] = useState('')
   const [language, setLanguage] = useState<'en' | 'ta' | 'hi'>('en')
   const [password, setPassword] = useState('')
-
   const [errors, setErrors] = useState<Record<string, string>>({})
 
   const onSubmit = async (e: FormEvent) => {
@@ -36,7 +38,6 @@ export function RegistrationPage() {
     if (!name.trim()) nextErrors.name = 'Name is required.'
     if (!email.trim()) nextErrors.email = 'Email is required.'
     else if (!validateEmail(email)) nextErrors.email = 'Enter a valid email address.'
-
     if (phone.trim() && phone.trim().length < 6) nextErrors.phone = 'Phone number looks too short.'
 
     const pwdError = validatePassword(password)
@@ -54,105 +55,48 @@ export function RegistrationPage() {
         password,
         language,
       })
-      // After registration, we send the user to login for a clean demo flow.
+      pushToast({ tone: 'success', title: 'Account created', description: 'You can sign in now.' })
       navigate('/login')
     } catch {
-      // authError is displayed
+      // authError shown below
     }
   }
 
   return (
-  <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-400 to-blue-800 px-4">
-    
-    <div className="w-full max-w-md bg-white/90 backdrop-blur-md rounded-2xl shadow-xl border border-white/30 p-8">
-      
-      <h1 className="text-3xl font-bold text-center text-gray-800">
-        Create Account
-      </h1>
-      <p className="mt-2 text-sm text-center text-gray-600">
-        Set up your multilingual support profile
-      </p>
+    <AuthShell title="Register" subtitle="Create your banking support account.">
+      <form className="space-y-4" onSubmit={onSubmit}>
+        <FormInput label="Full Name" value={name} onChange={setName} required error={errors.name || null} />
+        <FormInput label="Email" value={email} onChange={setEmail} required error={errors.email || null} placeholder="you@example.com" />
+        <FormInput label="Phone" value={phone} onChange={setPhone} error={errors.phone || null} />
 
-      <form className="mt-6 space-y-5" onSubmit={onSubmit}>
-        
-        <FormInput
-          label="Full Name"
-          value={name}
-          onChange={setName}
-          required
-          placeholder="Your name"
-          error={errors.name || null}
-        />
-
-        <FormInput
-          label="Email"
-          value={email}
-          onChange={setEmail}
-          required
-          placeholder="you@example.com"
-          error={errors.email || null}
-        />
-
-        <FormInput
-          label="Phone (optional)"
-          value={phone}
-          onChange={setPhone}
-          placeholder="9999999999"
-          error={errors.phone || null}
-        />
-
-        {/* Language Dropdown */}
-        <div className="space-y-1">
-          <label className="text-sm font-medium text-gray-900">
-            Preferred Language <span className="text-red-600">*</span>
-          </label>
+        <div className="space-y-2">
+          <label className="block text-sm font-medium text-gray-700">Preferred Language</label>
           <select
-            className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none"
+            className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm text-gray-900 outline-none focus:border-blue-600"
             value={language}
-            onChange={(e) => setLanguage(e.target.value as any)}
+            onChange={(e) => setLanguage(e.target.value as 'en' | 'ta' | 'hi')}
           >
+            <option value="en">English</option>
             <option value="ta">Tamil</option>
             <option value="hi">Hindi</option>
-            <option value="en">English</option>
           </select>
         </div>
 
-        <FormInput
-          label="Password"
-          type="password"
-          value={password}
-          onChange={setPassword}
-          required
-          error={errors.password || null}
-        />
+        <FormInput label="Password" type="password" value={password} onChange={setPassword} required error={errors.password || null} />
 
-        {authError && (
-          <div className="text-sm text-red-500 text-center">
-            {authError}
-          </div>
-        )}
+        {authError ? <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-600">{authError}</div> : null}
 
-        <CommonButton
-          className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium transition-all duration-200"
-          disabled={loading}
-          type="submit"
-        >
-          {loading ? 'Creating...' : 'Register'}
+        <CommonButton className="w-full" type="submit" loading={loading}>
+          {loading ? 'Creating account...' : 'Register'}
         </CommonButton>
 
-        <div className="text-sm text-center text-gray-600">
+        <p className="text-sm text-gray-600">
           Already have an account?{' '}
-          <Link
-            className="text-blue-600 font-medium hover:underline"
-            to="/login"
-          >
+          <Link className="font-medium text-blue-600 hover:underline" to="/login">
             Login
           </Link>
-        </div>
-
+        </p>
       </form>
-    </div>
-  </div>
-)
+    </AuthShell>
+  )
 }
-

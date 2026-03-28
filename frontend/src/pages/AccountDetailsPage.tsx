@@ -1,57 +1,63 @@
 import { useEffect, useState } from 'react'
-import { useAuth } from '../contexts/AuthContext'
+
 import { getAccountDetails, type AccountDetails } from '../api/accountApi'
+import { Skeleton } from '../components/ui/Skeleton'
+import { SurfaceCard } from '../components/ui/SurfaceCard'
+import { useAuth } from '../contexts/AuthContext'
+
+function formatCurrency(amount: number, currency: string) {
+  return new Intl.NumberFormat('en-IN', { style: 'currency', currency, maximumFractionDigits: 2 }).format(amount)
+}
 
 export function AccountDetailsPage() {
   const { user } = useAuth()
-
   const [loading, setLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
   const [details, setDetails] = useState<AccountDetails | null>(null)
 
   useEffect(() => {
     const load = async () => {
       setLoading(true)
-      setError(null)
-      try {
-        const env = await getAccountDetails()
-        setDetails(env.data)
-      } catch (e: any) {
-        setError(e?.response?.data?.message || e?.message || 'Failed to load account details.')
-      } finally {
-        setLoading(false)
-      }
+      const env = await getAccountDetails().catch(() => null)
+      setDetails(env?.data || null)
+      setLoading(false)
     }
-    load()
+
+    void load()
   }, [])
 
   return (
-    <div className="space-y-4">
-      <div>
-        <h2 className="text-xl font-semibold">Account Details</h2>
-        <p className="text-sm text-zinc-600 dark:text-zinc-300 mt-1">Customer ID: {user?._id}</p>
-      </div>
+    <div className="space-y-6">
+      <SurfaceCard>
+        <h1 className="text-2xl font-semibold text-gray-900">Account Details</h1>
+        <p className="mt-1 text-sm text-gray-600">Customer ID: {user?._id || 'Unavailable'}</p>
+      </SurfaceCard>
 
-      {error ? (
-        <div className="rounded-lg border border-red-200 bg-red-50 text-red-700 p-3 text-sm" role="alert">
-          {error}
+      {loading ? (
+        <div className="grid gap-4 md:grid-cols-3">
+          <Skeleton className="h-32" />
+          <Skeleton className="h-32" />
+          <Skeleton className="h-32" />
         </div>
-      ) : null}
-
-      {loading ? <div className="text-sm text-zinc-600">Loading...</div> : null}
-
-      {details ? (
-        <div className="border border-zinc-200 dark:border-zinc-800 rounded-lg bg-white dark:bg-zinc-900 p-4">
-          <div className="text-sm text-zinc-600 dark:text-zinc-300">Account Number</div>
-          <div className="text-lg font-semibold mt-1">{details.account_number}</div>
-
-          <div className="mt-4 text-sm text-zinc-600 dark:text-zinc-300">Balance</div>
-          <div className="text-2xl font-semibold mt-1">
-            {details.balance.toFixed(2)} {details.currency}
-          </div>
+      ) : details ? (
+        <div className="grid gap-4 md:grid-cols-3">
+          <SurfaceCard>
+            <p className="text-sm text-gray-600">Account Number</p>
+            <p className="mt-2 text-xl font-semibold text-gray-900">{details.account_number}</p>
+          </SurfaceCard>
+          <SurfaceCard>
+            <p className="text-sm text-gray-600">Balance</p>
+            <p className="mt-2 text-xl font-semibold text-gray-900">{formatCurrency(details.balance, details.currency)}</p>
+          </SurfaceCard>
+          <SurfaceCard>
+            <p className="text-sm text-gray-600">Currency</p>
+            <p className="mt-2 text-xl font-semibold text-gray-900">{details.currency}</p>
+          </SurfaceCard>
         </div>
-      ) : null}
+      ) : (
+        <SurfaceCard>
+          <p className="text-sm text-gray-600">No account details available.</p>
+        </SurfaceCard>
+      )}
     </div>
   )
 }
-

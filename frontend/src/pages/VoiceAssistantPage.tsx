@@ -1,7 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { useAuth } from '../contexts/AuthContext'
-import { CommonButton } from '../components/ui/CommonButton'
+import { motion } from 'framer-motion'
+import { Mic, Volume2, X } from 'lucide-react'
+
 import { processVoice, type VoiceProcessResponse } from '../api/voiceApi'
+import { CommonButton } from '../components/ui/CommonButton'
+import { Modal } from '../components/ui/Modal'
+import { SurfaceCard } from '../components/ui/SurfaceCard'
+import { useToast } from '../components/ui/ToastProvider'
+import { useAuth } from '../contexts/AuthContext'
 
 type ChatMessage = {
   id: string
@@ -16,21 +22,22 @@ function supportsSpeechRecognition() {
 
 export function VoiceAssistantPage() {
   const { user, loading: authLoading } = useAuth()
+  const { pushToast } = useToast()
 
   const [language, setLanguage] = useState<string>(user?.language || 'en')
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [recording, setRecording] = useState(false)
+  const [processing, setProcessing] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [transcriptText, setTranscriptText] = useState<string | null>(null)
+  const [modalOpen, setModalOpen] = useState(false)
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
   const mediaStreamRef = useRef<MediaStream | null>(null)
-  const chunksRef = useRef<Blob[]>([])
-
   const recognitionRef = useRef<any>(null)
-  const [transcriptText, setTranscriptText] = useState<string | null>(null)
+  const chunksRef = useRef<Blob[]>([])
   const transcriptTextRef = useRef<string | null>(null)
-
   const chatEndRef = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
@@ -41,37 +48,9 @@ export function VoiceAssistantPage() {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages, loading])
 
-  const audioMime = 'audio/mpeg'
-
-  const startRecognition = () => {
-    if (!supportsSpeechRecognition()) return null
-    const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
-    const rec = new SR()
-    rec.lang = language
-    rec.interimResults = true
-    rec.continuous = false
-
-    let finalTranscript = ''
-    rec.onresult = (event: any) => {
-      let interim = ''
-      for (let i = event.resultIndex; i < event.results.length; i++) {
-        const res = event.results[i]
-        if (res.isFinal) finalTranscript += res[0].transcript
-        else interim += res[0].transcript
-      }
-      const merged = (finalTranscript || interim).trim()
-      const next = merged ? merged : null
-      transcriptTextRef.current = next
-      setTranscriptText(next)
-    }
-
-    rec.onerror = () => {
-      // Best-effort only. Voice assistant will still use audio bytes.
-    }
-
-    recognitionRef.current = rec
-    rec.start()
-    return rec
+  const stopMediaTracks = () => {
+    mediaStreamRef.current?.getTracks().forEach((track) => track.stop())
+    mediaStreamRef.current = null
   }
 
   const stopRecognition = () => {
@@ -84,37 +63,81 @@ export function VoiceAssistantPage() {
     }
   }
 
+  const startRecognition = () => {
+    if (!supportsSpeechRecognition()) return
+    const SpeechRecognitionApi = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
+    const recognition = new SpeechRecognitionApi()
+    recognition.lang = language
+    recognition.interimResults = true
+    recognition.continuous = false
+    recognition.onresult = (event: any) => {
+      let finalTranscript = ''
+      let interimTranscript = ''
+
+      for (let index = event.resultIndex; index < event.results.length; index++) {
+        const result = event.results[index]
+        if (result.isFinal) finalTranscript += result[0].transcript
+        else interimTranscript += result[0].transcript
+      }
+
+      const nextText = (finalTranscript || interimTranscript).trim() || null
+      transcriptTextRef.current = nextText
+      setTranscriptText(nextText)
+    }
+    recognitionRef.current = recognition
+    recognition.start()
+  }
+
+  const resetRecorderState = () => {
+    chunksRef.current = []
+    transcriptTextRef.current = null
+    setTranscriptText(null)
+    mediaRecorderRef.current = null
+    setRecording(false)
+    setProcessing(false)
+  }
+
   const startRecording = async () => {
     setError(null)
-    setTranscriptText(null)
-    chunksRef.current = []
+    resetRecorderState()
+    setModalOpen(true)
 
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
       mediaStreamRef.current = stream
 
       const mimeCandidates = ['audio/webm;codecs=opus', 'audio/webm', 'audio/ogg;codecs=opus', 'audio/ogg']
-      const mimeType = mimeCandidates.find((m) => (window as any).MediaRecorder?.isTypeSupported?.(m)) || ''
-
+      const mimeType = mimeCandidates.find((item) => (window as any).MediaRecorder?.isTypeSupported?.(item)) || ''
       const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined)
-      mediaRecorderRef.current = recorder
 
-      recorder.ondataavailable = (ev: BlobEvent) => {
-        if (ev.data && ev.data.size > 0) chunksRef.current.push(ev.data)
+      recorder.ondataavailable = (event: BlobEvent) => {
+        if (event.data.size > 0) chunksRef.current.push(event.data)
       }
       recorder.onstop = () => {
-        stream.getTracks().forEach((t) => t.stop())
+        stopMediaTracks()
       }
 
-      const rec = startRecognition()
-      void rec
-
+      mediaRecorderRef.current = recorder
+      startRecognition()
       recorder.start()
       setRecording(true)
+      pushToast({ tone: 'info', title: 'Listening started' })
     } catch (e: any) {
+      setModalOpen(false)
       setError(e?.message || 'Microphone permission denied.')
-      setRecording(false)
     }
+  }
+
+  const closeRecorder = () => {
+    try {
+      mediaRecorderRef.current?.stop()
+    } catch {
+      // ignore
+    }
+    stopRecognition()
+    stopMediaTracks()
+    resetRecorderState()
+    setModalOpen(false)
   }
 
   const stopRecordingAndSend = async () => {
@@ -122,11 +145,16 @@ export function VoiceAssistantPage() {
     if (!recorder) return
 
     setRecording(false)
+    setProcessing(true)
     stopRecognition()
 
     try {
       await new Promise<void>((resolve) => {
-        recorder.onstop = () => resolve()
+        const originalOnStop = recorder.onstop
+        recorder.onstop = (event) => {
+          originalOnStop?.call(recorder, event)
+          resolve()
+        }
         recorder.stop()
       })
     } catch {
@@ -135,43 +163,27 @@ export function VoiceAssistantPage() {
 
     const blob = new Blob(chunksRef.current, { type: chunksRef.current[0]?.type || 'audio/webm' })
     const audioFile = new File([blob], 'voice.webm', { type: blob.type || 'audio/webm' })
-    const transcript = (transcriptTextRef.current || transcriptText) || undefined
+    const transcript = transcriptTextRef.current || transcriptText || undefined
+    const userText = transcript || 'Voice input received.'
 
-    const userText = transcript ? transcript : 'Voice input received.'
-    const userMsg: ChatMessage = { id: crypto.randomUUID(), role: 'user', text: userText }
-    setMessages((m) => [...m, userMsg])
+    setMessages((current) => [...current, { id: crypto.randomUUID(), role: 'user', text: userText }])
 
     setLoading(true)
     setError(null)
     try {
       const env = await processVoice({ language, transcript, audioFile })
-      const bot: VoiceProcessResponse = env.data as any
+      const bot = env.data as VoiceProcessResponse
+      const audioDataUrl = `data:${bot.audio_mime || 'audio/mpeg'};base64,${bot.audio_base64}`
 
-      const audioDataUrl = `data:${bot.audio_mime || audioMime};base64,${bot.audio_base64}`
-      const botMsg: ChatMessage = {
-        id: crypto.randomUUID(),
-        role: 'bot',
-        text: bot.text,
-        audioUrl: audioDataUrl,
-      }
-      setMessages((m) => [...m, botMsg])
-
-      // Autoplay response audio for demo experience.
-      setTimeout(() => {
-        try {
-          const a = new Audio(audioDataUrl)
-          a.play().catch(() => {
-            // ignore autoplay restrictions
-          })
-        } catch {
-          // ignore
-        }
-      }, 50)
+      setMessages((current) => [...current, { id: crypto.randomUUID(), role: 'bot', text: bot.text, audioUrl: audioDataUrl }])
+      pushToast({ tone: 'success', title: 'Voice response ready' })
     } catch (e: any) {
-      setError(e?.response?.data?.message || e?.message || 'Failed to process voice.')
+      const message = e?.response?.data?.message || e?.message || 'Failed to process voice.'
+      setError(message)
     } finally {
       setLoading(false)
-      mediaRecorderRef.current = null
+      resetRecorderState()
+      setModalOpen(false)
     }
   }
 
@@ -182,103 +194,128 @@ export function VoiceAssistantPage() {
   }, [language])
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-start justify-between gap-4 flex-col sm:flex-row">
-        <div>
-          <h2 className="text-xl font-semibold">Voice Assistant</h2>
-          <p className="text-sm text-zinc-600 dark:text-zinc-300 mt-1">
-            Speak your request (Balance/Transactions). Language: <span className="font-medium">{languageLabel}</span>
-          </p>
-        </div>
+    <>
+      <div className="space-y-6">
+        <SurfaceCard>
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h1 className="text-2xl font-semibold text-gray-900">Voice Assistant</h1>
+              <p className="mt-1 text-sm text-gray-600">Process banking requests using voice input and generated replies.</p>
+            </div>
+            <div className="flex items-center gap-3">
+              <select
+                className="rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm text-gray-900 outline-none focus:border-blue-600"
+                value={language}
+                onChange={(e) => setLanguage(e.target.value)}
+                disabled={recording || processing || loading || authLoading}
+              >
+                <option value="en">English</option>
+                <option value="ta">Tamil</option>
+                <option value="hi">Hindi</option>
+              </select>
+              <CommonButton onClick={() => void startRecording()} disabled={recording || processing || loading || authLoading} leftIcon={<Mic className="h-4 w-4" />}>
+                Start Recording
+              </CommonButton>
+            </div>
+          </div>
+        </SurfaceCard>
 
-        <div className="flex items-center gap-3">
-          <select
-            className="rounded-md border border-zinc-300 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-3 py-2 text-sm"
-            value={language}
-            onChange={(e) => setLanguage(e.target.value)}
-            disabled={recording || loading || authLoading}
-          >
-            <option value="ta">Tamil</option>
-            <option value="hi">Hindi</option>
-            <option value="en">English</option>
-          </select>
+        {error ? <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">{error}</div> : null}
 
-          {!recording ? (
-            <CommonButton className="bg-violet-600 hover:bg-violet-700" onClick={() => void startRecording()} disabled={loading || authLoading}>
-              {loading ? 'Processing...' : 'Start Recording'}
-            </CommonButton>
-          ) : (
-            <CommonButton className="bg-red-600 hover:bg-red-700" onClick={() => void stopRecordingAndSend()} disabled={loading}>
-              Stop & Send
-            </CommonButton>
-          )}
+        <div className="grid gap-6 xl:grid-cols-[1fr_320px]">
+          <SurfaceCard>
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-lg font-semibold text-gray-900">Conversation</h2>
+                <p className="mt-1 text-sm text-gray-600">Language: {languageLabel}</p>
+              </div>
+            </div>
+
+            <div className="mt-4 h-[420px] overflow-y-auto space-y-4 pr-2">
+              {messages.length === 0 ? (
+                <div className="flex h-full items-center justify-center rounded-lg border border-dashed border-gray-300 bg-gray-50 text-sm text-gray-500">
+                  No voice conversations yet.
+                </div>
+              ) : (
+                <>
+                  {messages.map((message) => (
+                    <div key={message.id} className={message.role === 'user' ? 'flex justify-end' : 'flex justify-start'}>
+                      <div className={['max-w-[85%] rounded-lg px-4 py-3 text-sm', message.role === 'user' ? 'bg-blue-600 text-white' : 'border border-gray-200 bg-gray-50 text-gray-900'].join(' ')}>
+                        <div>{message.text}</div>
+                        {message.audioUrl ? (
+                          <button
+                            type="button"
+                            className="mt-3 inline-flex items-center gap-2 text-sm font-medium text-blue-600 hover:underline"
+                            onClick={() => {
+                              try {
+                                const audio = new Audio(message.audioUrl)
+                                audio.play().catch(() => {})
+                              } catch {
+                                // ignore
+                              }
+                            }}
+                          >
+                            <Volume2 className="h-4 w-4" />
+                            Play audio
+                          </button>
+                        ) : null}
+                      </div>
+                    </div>
+                  ))}
+                  {loading ? <div className="text-sm text-gray-500">Processing voice request...</div> : null}
+                </>
+              )}
+              <div ref={chatEndRef} />
+            </div>
+          </SurfaceCard>
+
+          <SurfaceCard>
+            <h2 className="text-lg font-semibold text-gray-900">Live Transcript</h2>
+            <p className="mt-1 text-sm text-gray-600">Speech recognition preview while recording.</p>
+            <div className="mt-4 rounded-lg border border-gray-200 bg-gray-50 p-4 text-sm text-gray-700">
+              {transcriptText || 'Transcript will appear here while recording if speech recognition is supported.'}
+            </div>
+          </SurfaceCard>
         </div>
       </div>
 
-      {error ? (
-        <div className="rounded-lg border border-red-200 bg-red-50 text-red-700 p-3 text-sm" role="alert">
-          {error}
-        </div>
-      ) : null}
+      <Modal open={modalOpen} onClose={closeRecorder}>
+        <div className="relative w-full max-w-sm rounded-lg border border-gray-200 bg-white p-6 shadow-md">
+          <button
+            type="button"
+            className="absolute right-3 top-3 rounded p-1 text-gray-500 hover:bg-gray-100"
+            onClick={closeRecorder}
+            aria-label="Close voice modal"
+          >
+            <X className="h-4 w-4" />
+          </button>
 
-      <div className="grid gap-4 lg:grid-cols-3">
-        <div className="lg:col-span-2 border border-zinc-200 dark:border-zinc-800 rounded-lg bg-white dark:bg-zinc-900 p-4">
-          <div className="h-[420px] overflow-y-auto pr-2">
-            {messages.length === 0 ? (
-              <div className="text-sm text-zinc-500">
-                Record your voice and I will respond with text + audio.
-              </div>
-            ) : null}
-
-            <div className="space-y-3">
-              {messages.map((msg) => (
-                <div key={msg.id} className={msg.role === 'user' ? 'flex justify-end' : 'flex justify-start'}>
-                  <div
-                    className={[
-                      'max-w-[85%] rounded-xl px-4 py-3 text-sm whitespace-pre-wrap',
-                      msg.role === 'user'
-                        ? 'bg-violet-600 text-white rounded-tr-sm'
-                        : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 rounded-tl-sm',
-                    ].join(' ')}
-                  >
-                    {msg.text}
-                    {msg.role === 'bot' && msg.audioUrl ? (
-                      <div className="mt-2">
-                        <button
-                          type="button"
-                          className="text-xs underline opacity-90 hover:opacity-100"
-                          onClick={() => {
-                            try {
-                              const a = new Audio(msg.audioUrl!)
-                              a.play().catch(() => {})
-                            } catch {}
-                          }}
-                        >
-                          Play audio
-                        </button>
-                      </div>
-                    ) : null}
-                  </div>
-                </div>
-              ))}
-              {loading ? <div className="text-sm text-zinc-500">Processing voice...</div> : null}
-              <div ref={chatEndRef} />
+          <div className="flex flex-col items-center text-center">
+            <motion.div
+              animate={recording ? { scale: [1, 1.05, 1] } : undefined}
+              transition={{ duration: 1.2, repeat: Infinity }}
+              className="flex h-14 w-14 items-center justify-center rounded-full bg-blue-50 text-blue-600"
+            >
+              <Mic className="h-6 w-6" />
+            </motion.div>
+            <h3 className="mt-4 text-lg font-semibold text-gray-900">{processing ? 'Processing...' : recording ? 'Listening...' : 'Preparing...'}</h3>
+            <p className="mt-2 text-sm text-gray-600">
+              {processing ? 'Please wait while we process your request.' : 'Speak clearly into your microphone.'}
+            </p>
+            <div className="mt-4 w-full rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-700">
+              {transcriptText || 'Waiting for voice input...'}
+            </div>
+            <div className="mt-6 flex w-full gap-3">
+              <CommonButton className="flex-1" variant="outline" onClick={closeRecorder} disabled={processing}>
+                Cancel
+              </CommonButton>
+              <CommonButton className="flex-1" onClick={() => void stopRecordingAndSend()} disabled={!recording || processing}>
+                {processing ? 'Processing...' : 'Stop & Send'}
+              </CommonButton>
             </div>
           </div>
         </div>
-
-        <div className="border border-zinc-200 dark:border-zinc-800 rounded-lg bg-white dark:bg-zinc-900 p-4">
-          <h3 className="font-medium">How it works</h3>
-          <div className="mt-3 text-sm text-zinc-700 dark:text-zinc-200 space-y-2">
-            <div>1. Microphone audio (or transcript)</div>
-            <div>2. Whisper ASR (when transcript missing)</div>
-            <div>3. Intent routing (balance / transactions)</div>
-            <div>4. MongoDB lookup</div>
-            <div>5. Response text + gTTS audio</div>
-          </div>
-        </div>
-      </div>
-    </div>
+      </Modal>
+    </>
   )
 }
-

@@ -1,9 +1,9 @@
-import React from 'react'
+import type { ReactNode } from 'react'
 
 type Column<T> = {
   key: keyof T
   header: string
-  render?: (row: T) => React.ReactNode
+  render?: (row: T) => ReactNode
 }
 
 export function CommonTable<T extends Record<string, any>>({
@@ -14,38 +14,39 @@ export function CommonTable<T extends Record<string, any>>({
   rows: T[]
 }) {
   return (
-    <div className="overflow-x-auto border border-zinc-200 dark:border-zinc-800 rounded-lg bg-white dark:bg-zinc-900">
-      <table className="min-w-full text-sm">
-        <thead className="bg-zinc-50 dark:bg-zinc-800">
-          <tr>
-            {columns.map((c) => (
-              <th key={String(c.key)} className="px-4 py-3 text-left font-medium text-zinc-700 dark:text-zinc-200">
-                {c.header}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {rows.length === 0 ? (
+    <div className="overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm">
+      <div className="overflow-x-auto">
+        <table className="min-w-full text-sm">
+          <thead className="bg-gray-50">
             <tr>
-              <td colSpan={columns.length} className="px-4 py-8 text-center text-zinc-500">
-                No data found
-              </td>
+              {columns.map((column) => (
+                <th key={String(column.key)} className="px-4 py-3 text-left font-medium text-gray-600">
+                  {column.header}
+                </th>
+              ))}
             </tr>
-          ) : (
-            rows.map((row, idx) => (
-              <tr key={idx} className="border-t border-zinc-200/50 dark:border-zinc-800/50">
-                {columns.map((c) => (
-                  <td key={String(c.key)} className="px-4 py-3 text-zinc-800 dark:text-zinc-100">
-                    {c.render ? c.render(row) : String(row[c.key] ?? '')}
-                  </td>
-                ))}
+          </thead>
+          <tbody>
+            {rows.length === 0 ? (
+              <tr>
+                <td colSpan={columns.length} className="px-4 py-10 text-center text-gray-500">
+                  No records found.
+                </td>
               </tr>
-            ))
-          )}
-        </tbody>
-      </table>
+            ) : (
+              rows.map((row, index) => (
+                <tr key={index} className="border-t border-gray-200">
+                  {columns.map((column) => (
+                    <td key={String(column.key)} className="px-4 py-3 text-gray-900">
+                      {column.render ? column.render(row) : String(row[column.key] ?? '')}
+                    </td>
+                  ))}
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
     </div>
   )
 }
-

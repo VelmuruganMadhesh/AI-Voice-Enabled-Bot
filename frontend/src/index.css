@@ -2,9 +2,33 @@
 @tailwind components;
 @tailwind utilities;
 
-/* App-wide defaults */
-html,
-body {
-  height: 100%;
+@layer base {
+  html,
+  body,
+  #app {
+    height: 100%;
+  }
+
+  body {
+    @apply overflow-x-hidden bg-gray-50 text-gray-900 antialiased;
+  }
+
+  ::selection {
+    background: rgba(37, 99, 235, 0.18);
+    color: #111827;
+  }
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: #f3f4f6;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 999px;
 }
 
