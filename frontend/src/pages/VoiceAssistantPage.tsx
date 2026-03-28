@@ -46,6 +46,14 @@ export function VoiceAssistantPage() {
 
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+    if(messages.length === 0) return
+      try{
+        const audio = new Audio(messages[messages.length - 1].audioUrl)
+        audio.play().catch(() => {})
+      }
+      catch{
+        // ignore
+      }
   }, [messages, loading])
 
   const stopMediaTracks = () => {
