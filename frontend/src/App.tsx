@@ -42,6 +42,10 @@ function AppRoutes() {
       />
 
       <Route
+        path="/assistant"
+        element={<VoiceAssistantPage />}
+      />
+      <Route
         path="/dashboard"
         element={
           <ProtectedRoute>
@@ -102,7 +106,7 @@ function AppRoutes() {
         }
       />
 
-      <Route path="*" element={<Navigate to="/dashboard" replace />} />
+      <Route path="*" element={<Navigate to="/assistant" replace />} />
     </Routes>
   )
 }

@@ -7,4 +7,5 @@ class VoiceProcessResponse(BaseModel):
     audio_mime: str = "audio/mpeg"
     detected_intent: str | None = None
     transcript: str | None = None
+    requires_password: bool = False
 

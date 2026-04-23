@@ -58,6 +58,12 @@ export function LoginPage() {
             Register
           </Link>
         </p>
+        <p className="text-sm text-gray-600">
+          Need account details without login?{' '}
+          <Link className="font-medium text-blue-600 hover:underline" to="/assistant">
+            Open voice assistant
+          </Link>
+        </p>
       </form>
     </AuthShell>
   )

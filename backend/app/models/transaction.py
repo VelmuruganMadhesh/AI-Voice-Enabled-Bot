@@ -21,6 +21,7 @@ class TransactionUpdateRequest(BaseModel):
 
 class TransactionResponse(BaseModel):
     id: str = Field(..., alias="_id")
+    account_id: str | None = None
     account_number: str
     type: str
     amount: float

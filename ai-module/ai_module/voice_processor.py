@@ -6,6 +6,10 @@ import tempfile
 from typing import Literal
 
 from gtts import gTTS
+from passlib.context import CryptContext
+
+
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 
 def _normalize_language(language: str) -> Literal["ta", "hi", "en"]:
@@ -27,6 +31,8 @@ def detect_intent(text: str, language: str) -> str:
     t = (text or "").lower()
 
     # Minimal keyword-based intent detection (production can be replaced by LLM classifier).
+    if any(k in t for k in ["account detail", "account details", "my details", "profile", "user details"]):
+        return "details"
     if any(k in t for k in ["balance", "available", "amount", "account balance", "saldo", "balance amount"]):
         return "balance"
     if any(k in t for k in ["transaction", "transactions", "statement", "history", "last 5", "recent"]):
@@ -45,8 +51,36 @@ def detect_intent(text: str, language: str) -> str:
     return "general"
 
 
-def build_response_text(intent: str, *, language: str, balance: float | None, transactions: list[dict]) -> str:
+def is_protected_intent(intent: str) -> bool:
+    return intent in {"details", "balance", "transactions", "transfer"}
+
+
+def build_response_text(
+    intent: str,
+    *,
+    language: str,
+    balance: float | None,
+    transactions: list[dict],
+    account_details: dict | None,
+) -> str:
     lang_code = _normalize_language(language)
+
+    if intent == "details":
+        if not account_details:
+            return {
+                "ta": "உங்கள் கணக்கு விவரங்கள் இப்போது கிடைக்கவில்லை.",
+                "hi": "आपके खाते की जानकारी अभी उपलब्ध नहीं है।",
+                "en": "Your account details are not available right now.",
+            }[lang_code]
+
+        account_number = account_details.get("account_number") or "N/A"
+        currency = account_details.get("currency") or "INR"
+        account_balance = float(account_details.get("balance", 0.0))
+        return {
+            "ta": f"உங்கள் கணக்கு எண் {account_number}. கிடைக்கும் இருப்பு {account_balance:.2f} {currency}.",
+            "hi": f"आपका खाता नंबर {account_number} है। उपलब्ध बैलेंस {account_balance:.2f} {currency} है।",
+            "en": f"Your account number is {account_number}. Your available balance is {account_balance:.2f} {currency}.",
+        }[lang_code]
 
     if intent == "balance":
         if balance is None:
@@ -172,6 +206,8 @@ async def process_voice_request(
     audio_bytes: bytes | None,
     audio_mime: str | None,
     transcript_text: str | None,
+    password: str | None,
+    current_user: dict,
 ):
     lang_code = _normalize_language(language)
 
@@ -196,10 +232,39 @@ async def process_voice_request(
     # 2) Intent detection
     detected_intent = detect_intent(transcript, lang_code)
 
+    if is_protected_intent(detected_intent):
+        password_hash = current_user.get("password_hash", "")
+        password_is_valid = bool(password and password_hash and pwd_context.verify(password, password_hash))
+        if not password_is_valid:
+            response_text = {
+                "ta": "இந்த கோரிக்கைக்கு உங்கள் கடவுச்சொல்லை உறுதிப்படுத்த வேண்டும். தொடர உங்கள் கடவுச்சொல்லை உள்ளிடவும்.",
+                "hi": "इस अनुरोध के लिए आपका पासवर्ड पुष्टि करना जरूरी है। आगे बढ़ने के लिए कृपया अपना पासवर्ड दर्ज करें।",
+                "en": "Please enter your password to confirm this request.",
+            }[lang_code]
+            audio_base64 = synthesize_tts_mp3_base64(response_text, lang_code)
+            return {
+                "text": response_text,
+                "audio_base64": audio_base64,
+                "audio_mime": "audio/mpeg",
+                "detected_intent": detected_intent,
+                "transcript": transcript,
+                "requires_password": True,
+            }
+
     # 3) Fetch relevant data from MongoDB
     balance = None
     transactions: list[dict] = []
-    if detected_intent == "balance":
+    account_details = None
+    if detected_intent == "details":
+        accounts_col = db["accounts"]
+        account = await accounts_col.find_one({"user_id": user_id})
+        if account:
+            account_details = {
+                "account_number": account.get("account_number"),
+                "currency": account.get("currency", "INR"),
+                "balance": float(account.get("balance", 0.0)),
+            }
+    elif detected_intent == "balance":
         accounts_col = db["accounts"]
         account = await accounts_col.find_one({"user_id": user_id})
         if account:
@@ -221,16 +286,13 @@ async def process_voice_request(
             }
             for d in docs
         ]
-    else:
-        # For general/transfer, we try to show balance as a default.
-        accounts_col = db["accounts"]
-        account = await accounts_col.find_one({"user_id": user_id})
-        if account:
-            balance = float(account.get("balance", 0.0))
-
     # 4) Generate response text (rule-based + optional LLM)
     base_text = build_response_text(
-        detected_intent, language=lang_code, balance=balance, transactions=transactions
+        detected_intent,
+        language=lang_code,
+        balance=balance,
+        transactions=transactions,
+        account_details=account_details,
     )
     llm_prompt = (
         "You are a multilingual banking customer support assistant. "
@@ -256,5 +318,6 @@ async def process_voice_request(
         "audio_mime": "audio/mpeg",
         "detected_intent": detected_intent,
         "transcript": transcript,
+        "requires_password": False,
     }
 
