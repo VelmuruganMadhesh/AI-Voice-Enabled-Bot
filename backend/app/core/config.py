@@ -3,24 +3,20 @@ import os
 
 
 class Settings(BaseSettings):
-    """
-    Application configuration loaded from environment variables (and .env if present).
-    """
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     # Server
-    api_base_path: str = "/api"
-    cors_origins: str = "*"  # comma-separated or "*" for all
+    api_base_path: str
+    cors_origins: str
 
     # MongoDB
-    mongodb_uri: str = "mongodb+srv://veludas005:velu1234@cluster0.dyzgf0d.mongodb.net/AIBankingApp?retryWrites=true&w=majority&appName=Cluster0"
-    mongo_db_name: str = "voice_banking_support"
-
+    mongodb_uri: str
+    mongo_db_name: str
     # JWT
-    jwt_secret_key: str = "change-me-in-production"
-    jwt_algorithm: str = "HS256"
-    jwt_access_token_expire_minutes: int = 60
+    jwt_secret_key: str
+    jwt_algorithm: str
+    jwt_access_token_expire_minutes: int
 
 
 def get_settings() -> Settings:
