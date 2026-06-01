@@ -1,5 +1,6 @@
 import os
 import sys
+import logging
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -19,6 +20,9 @@ from app.routes.auth import router as auth_router
 from app.routes.transactions import router as transactions_router
 from app.routes.account import router as account_router
 from app.routes.voice import router as voice_router
+
+
+logger = logging.getLogger(__name__)
 
 
 def create_app() -> FastAPI:
@@ -43,7 +47,7 @@ def create_app() -> FastAPI:
 
     @app.exception_handler(Exception)
     async def unhandled_exception_handler(request: Request, exc: Exception):
-        # In production, log exc details with a proper logger.
+        logger.exception("Unhandled API error on %s %s", request.method, request.url.path)
         exc_name = exc.__class__.__name__
         exc_msg = str(exc).lower()
         if exc_name == "ServerSelectionTimeoutError" or "serverselectiontimeouterror" in exc_name.lower():
